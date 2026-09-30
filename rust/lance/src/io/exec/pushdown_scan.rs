@@ -49,6 +49,8 @@ use crate::{
 
 use super::Planner;
 use super::utils::{InstrumentedRecordBatchStreamAdapter, buffered_fragment_opens};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 #[derive(Debug, Clone)]
 pub struct ScanConfig {
@@ -156,6 +158,13 @@ impl LancePushdownScanExec {
 }
 
 impl ExecutionPlan for LancePushdownScanExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "LancePushdownScanExec"
     }

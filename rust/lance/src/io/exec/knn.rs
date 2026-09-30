@@ -78,6 +78,9 @@ use super::utils::{
 mod adaptive_probe;
 
 use adaptive_probe::AutoProbePolicy;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
+use lance_datafusion::utils::plan_statistics;
 
 pub const QUERY_INDEX_COL: &str = "query_index";
 
@@ -946,6 +949,13 @@ impl KNNVectorDistanceExec {
 }
 
 impl ExecutionPlan for KNNVectorDistanceExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "KNNVectorDistanceExec"
     }
@@ -1066,7 +1076,7 @@ impl ExecutionPlan for KNNVectorDistanceExec {
     }
 
     fn partition_statistics(&self, partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
-        let inner_stats = self.input.partition_statistics(partition)?;
+        let inner_stats = plan_statistics(self.input.as_ref(), partition)?;
         let input_schema = self.input.schema();
         let input_stats_by_name = inner_stats
             .column_statistics
@@ -1394,6 +1404,13 @@ impl DisplayAs for ANNIvfPartitionExec {
 }
 
 impl ExecutionPlan for ANNIvfPartitionExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "ANNIVFPartitionExec"
     }
@@ -2198,6 +2215,13 @@ impl ANNIvfSubIndexExec {
 }
 
 impl ExecutionPlan for ANNIvfSubIndexExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "ANNSubIndexExec"
     }
@@ -2461,9 +2485,7 @@ impl ExecutionPlan for ANNIvfSubIndexExec {
             num_rows: Precision::Exact(
                 self.query.k
                     * self.query.refine_factor.unwrap_or(1) as usize
-                    * self
-                        .input
-                        .partition_statistics(partition)?
+                    * plan_statistics(self.input.as_ref(), partition)?
                         .num_rows
                         .get_value()
                         .unwrap_or(&1),
@@ -2627,6 +2649,13 @@ impl DisplayAs for ANNIvfBatchExec {
 }
 
 impl ExecutionPlan for ANNIvfBatchExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "ANNIvfBatchExec"
     }
@@ -2914,6 +2943,13 @@ impl DisplayAs for MultivectorScoringExec {
 }
 
 impl ExecutionPlan for MultivectorScoringExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "MultivectorScoringExec"
     }
@@ -4522,7 +4558,7 @@ mod tests {
             },
         )
         .unwrap();
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         assert_eq!(
             stats.column_statistics.len(),
             plan.schema().fields().len(),

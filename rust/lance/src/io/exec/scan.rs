@@ -45,6 +45,8 @@ use crate::dataset::scanner::{
 use crate::datatypes::Schema;
 
 use super::utils::{IoMetrics, buffered_fragment_opens};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 async fn open_file(
     file_fragment: FileFragment,
@@ -754,6 +756,13 @@ impl LanceScanExec {
 }
 
 impl ExecutionPlan for LanceScanExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "LanceScanExec"
     }
@@ -869,6 +878,7 @@ mod tests {
     use datafusion::execution::TaskContext;
     use datafusion::prelude::SessionConfig;
     use futures::TryStreamExt;
+    use lance_datafusion::utils::plan_statistics;
     use lance_datagen::{array, gen_batch};
     use lance_file::version::LanceFileVersion;
     use rstest::rstest;
@@ -951,7 +961,7 @@ mod tests {
             LanceScanConfig::default(),
         );
 
-        let stats = scan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&scan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Exact(expected_rows));
 
         // The estimate is only worth anything if it matches what the scan emits.
@@ -977,7 +987,7 @@ mod tests {
             LanceScanConfig::default(),
         );
 
-        let stats = scan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&scan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Exact(TOTAL_ROWS));
         assert_eq!(scanned_rows(&scan).await, TOTAL_ROWS);
     }

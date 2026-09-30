@@ -31,6 +31,8 @@ use crate::dataset::write::merge_insert::{
 };
 
 use super::MergeInsertMetrics;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Patches the source columns into the existing fragments instead of rewriting
 /// whole rows.
@@ -366,6 +368,13 @@ impl DisplayAs for InPlaceMergeInsertExec {
 }
 
 impl ExecutionPlan for InPlaceMergeInsertExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "InPlaceMergeInsertExec"
     }

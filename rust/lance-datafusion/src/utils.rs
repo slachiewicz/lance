@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright The Lance Authors
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use arrow::ffi_stream::ArrowArrayStreamReader;
 use arrow_array::{RecordBatch, RecordBatchIterator, RecordBatchReader};
@@ -11,14 +12,14 @@ use background_iterator::BackgroundIterator;
 use datafusion::{
     execution::RecordBatchStream,
     physical_plan::{
-        SendableRecordBatchStream,
+        ExecutionPlan, SendableRecordBatchStream, StatisticsArgs, StatisticsContext,
         metrics::{
             Count, ExecutionPlanMetricsSet, Gauge, MetricBuilder, MetricValue, MetricsSet, Time,
         },
         stream::RecordBatchStreamAdapter,
     },
 };
-use datafusion_common::DataFusionError;
+use datafusion_common::{DataFusionError, Statistics};
 use futures::{StreamExt, TryStreamExt, stream};
 use lance_core::Result;
 use lance_core::datatypes::Schema;
@@ -141,6 +142,19 @@ impl StreamingWriteSource for SendableRecordBatchStream {
 /// Convert reader to a stream.
 ///
 /// The reader will be called in a background thread.
+/// Computes the statistics of `plan` for `partition` (`None` for the whole plan).
+///
+/// DataFusion's built-in operators only implement
+/// [`ExecutionPlan::statistics_from_inputs`] since DataFusion 55, and the
+/// deprecated [`ExecutionPlan::partition_statistics`] returns unknown
+/// statistics for them. [`StatisticsContext`] resolves both kinds of node.
+pub fn plan_statistics(
+    plan: &dyn ExecutionPlan,
+    partition: Option<usize>,
+) -> datafusion_common::Result<Arc<Statistics>> {
+    StatisticsContext::new().compute(plan, &StatisticsArgs::new().with_partition(partition))
+}
+
 pub fn reader_to_stream(batches: Box<dyn RecordBatchReader + Send>) -> SendableRecordBatchStream {
     let arrow_schema = batches.arrow_schema();
     let stream = RecordBatchStreamAdapter::new(

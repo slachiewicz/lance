@@ -52,6 +52,8 @@ use crate::{
 };
 
 use super::apply_deletions;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Shared state for merge insert operations to simplify lock management
 struct MergeState {
@@ -851,6 +853,13 @@ impl DisplayAs for FullSchemaMergeInsertExec {
 }
 
 impl ExecutionPlan for FullSchemaMergeInsertExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FullSchemaMergeInsertExec"
     }

@@ -25,6 +25,8 @@ use lance_core::{Error, Result};
 use super::super::builder::ScalarPredicate;
 use crate::dataset::mem_wal::memtable::scanner::exec::{scan_record_batch, take_projected_columns};
 use crate::dataset::mem_wal::write::{BatchStore, IndexStore};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// ExecutionPlan node that queries BTree index with visibility filtering.
 pub struct BTreeIndexExec {
@@ -311,6 +313,13 @@ impl DisplayAs for BTreeIndexExec {
 }
 
 impl ExecutionPlan for BTreeIndexExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "BTreeIndexExec"
     }

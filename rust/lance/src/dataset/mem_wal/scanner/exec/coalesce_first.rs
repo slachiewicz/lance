@@ -12,6 +12,7 @@ use std::task::{Context, Poll};
 
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::error::Result as DFResult;
 use datafusion::execution::TaskContext;
 use datafusion::physical_expr::{EquivalenceProperties, Partitioning};
@@ -19,6 +20,7 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
     SendableRecordBatchStream,
 };
+use datafusion_physical_expr::PhysicalExpr;
 use futures::{Stream, StreamExt};
 
 /// Returns the first non-empty result from multiple inputs with short-circuit evaluation.
@@ -106,6 +108,13 @@ impl DisplayAs for CoalesceFirstExec {
 }
 
 impl ExecutionPlan for CoalesceFirstExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "CoalesceFirstExec"
     }

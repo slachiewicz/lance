@@ -76,6 +76,7 @@ use arrow_select::take::take_record_batch;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::{Column as DFColumn, NullEquality, TableReference};
 use datafusion::error::DataFusionError;
+use datafusion::physical_plan::execution_plan::{ChildrenPropertiesMode, ReplaceChildrenOptions};
 use datafusion::{
     catalog::{TableProvider, streaming::StreamingTable},
     datasource::MemTable,
@@ -1672,7 +1673,10 @@ impl MergeInsertJob {
                                 as Arc<dyn ExecutionPlan>
                         })
                         .collect();
-                    let new_node = node.with_new_children(new_children)?;
+                    let new_node = node.replace_children(
+                        new_children,
+                        ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+                    )?;
                     Ok(Transformed::yes(new_node))
                 } else {
                     Ok(Transformed::no(node))
@@ -2567,11 +2571,7 @@ impl MergeInsertJob {
 
         // Execute the plan
         // Assert that we have exactly one partition since we're designed for single-partition execution
-        let partition_count = match plan.properties().output_partitioning() {
-            datafusion_physical_expr::Partitioning::RoundRobinBatch(n) => *n,
-            datafusion_physical_expr::Partitioning::Hash(_, n) => *n,
-            datafusion_physical_expr::Partitioning::UnknownPartitioning(n) => *n,
-        };
+        let partition_count = plan.properties().output_partitioning().partition_count();
 
         if partition_count != 1 {
             return Err(Error::invalid_input(format!(
@@ -3858,6 +3858,7 @@ mod tests {
     use futures::{FutureExt, StreamExt, TryStreamExt, future::try_join_all};
     use lance_arrow::FixedSizeListArrayExt;
     use lance_core::utils::tempfile::TempStrDir;
+    use lance_datafusion::utils::plan_statistics;
     use lance_datafusion::{datagen::DatafusionDatagenExt, utils::reader_to_stream};
     use lance_datagen::{BatchCount, Dimension, RowCount, Seed, array};
     use lance_index::IndexType;
@@ -6731,8 +6732,11 @@ mod tests {
         );
 
         let rebuilt = plan
-            .with_new_children(vec![dummy_input.clone()])
-            .expect("with_new_children must accept exactly one child");
+            .replace_children(
+                vec![dummy_input.clone()],
+                ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+            )
+            .expect("replace_children must accept exactly one child");
         let rebuilt_rendered = format!("{}", displayable(rebuilt.as_ref()).indent(false));
         assert!(
             rebuilt_rendered.contains("IndexedLookup [a, b]"),
@@ -15043,7 +15047,7 @@ MergeInsert: on=[id], when_matched=DoNothing, when_not_matched=InsertAll, when_n
     }
 
     fn collect_exact_row_counts(plan: &Arc<dyn ExecutionPlan>, out: &mut Vec<usize>) {
-        if let Ok(stats) = plan.partition_statistics(None)
+        if let Ok(stats) = plan_statistics(plan.as_ref(), None)
             && let datafusion::common::stats::Precision::Exact(n) = stats.num_rows
         {
             out.push(n);

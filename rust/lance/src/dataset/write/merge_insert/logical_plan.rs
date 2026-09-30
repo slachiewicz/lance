@@ -4,8 +4,9 @@
 use async_trait::async_trait;
 use datafusion::common::Result as DFResult;
 use datafusion::{
+    catalog::Session,
     common::DFSchema,
-    execution::SessionState,
+    logical_expr::physical_planning_context::PhysicalPlanningContext,
     physical_plan::ExecutionPlan,
     physical_planner::{ExtensionPlanner, PhysicalPlanner},
 };
@@ -286,7 +287,8 @@ impl ExtensionPlanner for MergeInsertPlanner {
         node: &dyn UserDefinedLogicalNode,
         logical_inputs: &[&LogicalPlan],
         physical_inputs: &[Arc<dyn ExecutionPlan>],
-        _session_state: &SessionState,
+        _session: &dyn Session,
+        _planning_ctx: &PhysicalPlanningContext,
     ) -> DFResult<Option<Arc<dyn ExecutionPlan>>> {
         Ok(
             if let Some(write_node) = node.as_any().downcast_ref::<MergeInsertWriteNode>() {

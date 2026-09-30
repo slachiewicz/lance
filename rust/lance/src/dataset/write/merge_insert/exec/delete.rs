@@ -31,6 +31,8 @@ use crate::dataset::write::merge_insert::{
 };
 
 use super::{MergeInsertMetrics, apply_deletions};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Specialized physical execution node for delete-only merge insert operations.
 ///
@@ -218,6 +220,13 @@ impl DisplayAs for DeleteOnlyMergeInsertExec {
 }
 
 impl ExecutionPlan for DeleteOnlyMergeInsertExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "DeleteOnlyMergeInsertExec"
     }

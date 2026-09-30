@@ -24,6 +24,7 @@ use arrow::compute::filter_record_batch;
 use arrow_array::{ArrayRef, BooleanArray, RecordBatch};
 use arrow_row::{OwnedRow, RowConverter, SortField};
 use arrow_schema::SchemaRef;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::TaskContext;
 use datafusion::physical_expr::EquivalenceProperties;
@@ -31,6 +32,7 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
     SendableRecordBatchStream,
 };
+use datafusion_physical_expr::PhysicalExpr;
 use futures::{Stream, StreamExt};
 
 /// Emits the first row seen for each primary key, preserving input order.
@@ -71,6 +73,13 @@ impl DisplayAs for FirstByPkExec {
 }
 
 impl ExecutionPlan for FirstByPkExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FirstByPkExec"
     }

@@ -39,6 +39,9 @@ use futures::stream::{self, StreamExt};
 use crate::dataset::mem_wal::memtable::scanner::exec::{scan_record_batch, take_projected_columns};
 use crate::dataset::mem_wal::scanner::exec::compute_pk_hash;
 use crate::dataset::mem_wal::write::BatchStore;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::physical_plan::execution_plan::apply_expression_roots;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Scans the active memtable newest-first and emits the newest-per-PK rows
 /// that satisfy the (optional) predicate. See the module doc.
@@ -148,6 +151,13 @@ impl DisplayAs for MemTableDedupScanExec {
 }
 
 impl ExecutionPlan for MemTableDedupScanExec {
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        apply_expression_roots(self.filter_predicate.iter(), f)
+    }
+
     fn name(&self) -> &str {
         "MemTableDedupScanExec"
     }

@@ -19,6 +19,7 @@ use arrow_array::{Array, ArrayRef, RecordBatch, UInt64Array, cast::AsArray, type
 use arrow_schema::{Schema, SchemaRef};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::{
     execution::memory_pool::{MemoryConsumer, MemoryReservation},
     physical_plan::{
@@ -30,6 +31,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use datafusion_physical_expr::EquivalenceProperties;
+use datafusion_physical_expr::PhysicalExpr;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, stream::BoxStream};
 use lance_core::{Error, ROW_ID_FIELD, Result, deepsize::DeepSizeOf, utils::address::RowAddress};
 use lance_datafusion::{
@@ -288,6 +290,13 @@ impl ScalarIndexExec {
 }
 
 impl ExecutionPlan for ScalarIndexExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "ScalarIndexExec"
     }
@@ -783,6 +792,13 @@ impl MapIndexExec {
 }
 
 impl ExecutionPlan for MapIndexExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "MapIndexExec"
     }
@@ -1086,6 +1102,13 @@ async fn retain_fragments(
 }
 
 impl ExecutionPlan for MaterializeIndexExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "MaterializeIndexExec"
     }
@@ -1156,6 +1179,7 @@ impl ExecutionPlan for MaterializeIndexExec {
 
 #[cfg(test)]
 mod tests {
+    use lance_datafusion::utils::plan_statistics;
     use std::{ops::Bound, sync::Arc};
 
     use crate::index::DatasetIndexExt;
@@ -1407,7 +1431,7 @@ mod tests {
         let verify = async |plan: ScalarIndexExec, schema: Arc<Schema>| {
             assert_eq!(plan.schema(), schema);
             assert_eq!(
-                plan.partition_statistics(None)
+                plan_statistics(&plan, None)
                     .unwrap()
                     .column_statistics
                     .len(),

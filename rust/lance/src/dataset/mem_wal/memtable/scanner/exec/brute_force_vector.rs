@@ -36,6 +36,9 @@ use super::newest_pk_positions;
 use super::vector::DISTANCE_COLUMN;
 use crate::dataset::mem_wal::memtable::scanner::exec::{scan_record_batch, take_projected_columns};
 use crate::dataset::mem_wal::write::BatchStore;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::physical_plan::execution_plan::apply_expression_roots;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Distance metric used when [`VectorQuery::distance_type`] is `None`. The
 /// indexed path defers to the index's own metric, but with no index there is
@@ -423,6 +426,13 @@ impl DisplayAs for MemTableBruteForceVectorExec {
 }
 
 impl ExecutionPlan for MemTableBruteForceVectorExec {
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        apply_expression_roots(self.filter.iter(), f)
+    }
+
     fn name(&self) -> &str {
         "MemTableBruteForceVectorExec"
     }

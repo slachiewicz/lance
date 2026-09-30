@@ -51,6 +51,8 @@ use crate::index::scalar::inverted::{
     load_segments, transform_fts_document_stream,
 };
 use crate::{Dataset, index::DatasetIndexInternalExt};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use lance_datafusion::utils::plan_statistics;
 use lance_index::metrics::MetricsCollector;
 use lance_index::scalar::inverted::builder::ScoredDoc;
 use lance_index::scalar::inverted::builder::document_input;
@@ -222,6 +224,13 @@ impl DisplayAs for FtsDocumentExec {
 }
 
 impl ExecutionPlan for FtsDocumentExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FtsDocumentExec"
     }
@@ -1088,6 +1097,13 @@ impl DisplayAs for HybridCompoundQueryExec {
 }
 
 impl ExecutionPlan for HybridCompoundQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "HybridCompoundQueryExec"
     }
@@ -1366,6 +1382,13 @@ impl DisplayAs for CompoundQueryExec {
 }
 
 impl ExecutionPlan for CompoundQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "CompoundQueryExec"
     }
@@ -1919,6 +1942,13 @@ impl DisplayAs for CrossColumnCompoundQueryExec {
 }
 
 impl ExecutionPlan for CrossColumnCompoundQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "CrossColumnCompoundQueryExec"
     }
@@ -2899,6 +2929,13 @@ impl MatchQueryExec {
 }
 
 impl ExecutionPlan for MatchQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "MatchQueryExec"
     }
@@ -3440,6 +3477,13 @@ async fn open_combined_fields_scan(
 }
 
 impl ExecutionPlan for CombinedFieldsQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "CombinedFieldsQueryExec"
     }
@@ -3981,6 +4025,13 @@ impl FlatMatchFilterExec {
 }
 
 impl ExecutionPlan for FlatMatchFilterExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FlatMatchFilterExec"
     }
@@ -4045,7 +4096,7 @@ impl ExecutionPlan for FlatMatchFilterExec {
     }
 
     fn partition_statistics(&self, partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
-        self.input.partition_statistics(partition)
+        plan_statistics(self.input.as_ref(), partition)
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
@@ -4252,6 +4303,13 @@ impl FlatMatchQueryExec {
 }
 
 impl ExecutionPlan for FlatMatchQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FlatMatchQueryExec"
     }
@@ -4580,6 +4638,13 @@ impl FlatCombinedFieldsExec {
 }
 
 impl ExecutionPlan for FlatCombinedFieldsExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FlatCombinedFieldsExec"
     }
@@ -5079,6 +5144,13 @@ impl PhraseQueryExec {
 }
 
 impl ExecutionPlan for PhraseQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "PhraseQueryExec"
     }
@@ -5356,6 +5428,13 @@ impl BoostQueryExec {
 }
 
 impl ExecutionPlan for BoostQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "BoostQueryExec"
     }
@@ -5628,6 +5707,13 @@ impl BooleanQueryExec {
 }
 
 impl ExecutionPlan for BooleanQueryExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "BooleanQueryExec"
     }
@@ -5796,6 +5882,9 @@ impl ExecutionPlan for BooleanQueryExec {
 
 #[cfg(test)]
 mod tests {
+    use datafusion::physical_plan::execution_plan::{
+        ChildrenPropertiesMode, ReplaceChildrenOptions,
+    };
     use std::sync::{Arc, Mutex};
 
     use crate::index::DatasetIndexExt;
@@ -6938,7 +7027,10 @@ mod tests {
             )
             .unwrap(),
         )
-        .with_new_children(vec![])
+        .replace_children(
+            vec![],
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
         .unwrap();
         let rewritten = ordered_plan.downcast_ref::<MatchQueryExec>().unwrap();
         assert_eq!(
@@ -7175,7 +7267,10 @@ mod tests {
             )
             .unwrap(),
         )
-        .with_new_children(vec![])
+        .replace_children(
+            vec![],
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
         .unwrap();
         let rewritten = ordered_plan.downcast_ref::<PhraseQueryExec>().unwrap();
         assert_eq!(

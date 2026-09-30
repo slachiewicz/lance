@@ -739,8 +739,7 @@ impl LsmFtsSearchPlanner {
         let merged: Arc<dyn ExecutionPlan> = if per_column_plans.len() == 1 {
             per_column_plans.into_iter().next().unwrap()
         } else {
-            #[allow(deprecated)]
-            Arc::new(UnionExec::new(per_column_plans))
+            UnionExec::try_new(per_column_plans)?
         };
         // Order the candidates, collapse duplicates, *then* cut to k. Cutting
         // before the collapse spends the budget on repeat hits of the same row.
@@ -940,7 +939,7 @@ impl LsmFtsSearchPlanner {
             // task per input partition (one per union arm) via `spawn_buffered`,
             // so each arm's per-arm CPU (posting decode, BM25) runs on its own
             // task without an extra repartition.
-            Arc::new(UnionExec::new(per_source_plans))
+            UnionExec::try_new(per_source_plans)?
         };
 
         self.sort_by_score(merged, limit)

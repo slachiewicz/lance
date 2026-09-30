@@ -25,6 +25,9 @@ use futures::stream::{self, StreamExt};
 use crate::dataset::blob::prepared_blob_batch_to_descriptors;
 use crate::dataset::mem_wal::memtable::scanner::exec::take_projected_columns;
 use crate::dataset::mem_wal::write::BatchStore;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::physical_plan::execution_plan::apply_expression_roots;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Column name for row address (consistent with base table scanner).
 pub const ROW_ADDRESS_COLUMN: &str = "_rowaddr";
@@ -187,6 +190,13 @@ impl DisplayAs for MemTableScanExec {
 }
 
 impl ExecutionPlan for MemTableScanExec {
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        apply_expression_roots(self.filter_predicate.iter(), f)
+    }
+
     fn name(&self) -> &str {
         "MemTableScanExec"
     }
@@ -377,6 +387,7 @@ mod tests {
     use arrow_array::{Int32Array, StringArray};
     use arrow_schema::{DataType, Field, Schema};
     use futures::TryStreamExt;
+    use lance_datafusion::utils::plan_statistics;
 
     fn create_test_schema() -> Arc<Schema> {
         Arc::new(Schema::new(vec![
@@ -497,7 +508,7 @@ mod tests {
         // max_readable=1 means positions 0 and 1 are visible
         let exec = MemTableScanExec::new(batch_store, 2, None, schema, false);
 
-        let stats = exec.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&exec, None).unwrap();
         // Statistics are Absent to avoid DataFusion analysis bugs
         assert_eq!(stats.num_rows, Precision::Absent);
     }

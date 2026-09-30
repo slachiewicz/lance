@@ -42,6 +42,9 @@ use super::utils::InstrumentedRecordBatchStreamAdapter;
 use crate::Dataset;
 use crate::dataset::rowids::load_row_id_sequences;
 use crate::index::prefilter::DatasetPreFilter;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::physical_plan::execution_plan::apply_expression_roots;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// An execution node that computes a `COUNT(*)`-style aggregate from an
 /// optional row-address mask supplied by an upstream scalar-index search,
@@ -391,6 +394,22 @@ impl CountFromMaskExec {
 }
 
 impl ExecutionPlan for CountFromMaskExec {
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        apply_expression_roots(
+            self.aggregate_funcs.iter().flat_map(|aggr| {
+                let expressions = aggr.all_expressions();
+                expressions
+                    .args
+                    .into_iter()
+                    .chain(expressions.order_by_exprs)
+            }),
+            f,
+        )
+    }
+
     fn name(&self) -> &str {
         "CountFromMaskExec"
     }

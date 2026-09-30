@@ -25,6 +25,8 @@ use lance_core::{Error, Result};
 use super::super::builder::VectorQuery;
 use crate::dataset::mem_wal::memtable::scanner::exec::{scan_record_batch, take_projected_columns};
 use crate::dataset::mem_wal::write::{BatchStore, IndexStore};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Distance column name in output.
 pub const DISTANCE_COLUMN: &str = "_distance";
@@ -307,6 +309,13 @@ impl DisplayAs for VectorIndexExec {
 }
 
 impl ExecutionPlan for VectorIndexExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "VectorIndexExec"
     }

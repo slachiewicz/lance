@@ -41,6 +41,9 @@ use crate::datatypes::Schema;
 use crate::index::prefilter::DatasetPreFilter;
 
 use super::utils::IoMetrics;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
+use lance_datafusion::utils::plan_statistics;
 
 #[derive(Debug, Clone)]
 struct TakeStreamMetrics {
@@ -644,6 +647,13 @@ impl TakeExec {
 }
 
 impl ExecutionPlan for TakeExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "TakeExec"
     }
@@ -740,7 +750,7 @@ impl ExecutionPlan for TakeExec {
         partition: Option<usize>,
     ) -> Result<Arc<datafusion::physical_plan::Statistics>> {
         Ok(Arc::new(Statistics {
-            num_rows: self.input.partition_statistics(partition)?.num_rows,
+            num_rows: plan_statistics(self.input.as_ref(), partition)?.num_rows,
             ..Statistics::new_unknown(self.schema().as_ref())
         }))
     }
@@ -757,6 +767,9 @@ impl ExecutionPlan for TakeExec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datafusion::physical_plan::execution_plan::{
+        ChildrenPropertiesMode, ReplaceChildrenOptions,
+    };
 
     use arrow_array::{
         ArrayRef, Float32Array, Int32Array, RecordBatchIterator, StringArray, StructArray,
@@ -1350,8 +1363,11 @@ mod tests {
             vec!["i", ROW_ID, "s", "f"],
         );
 
-        // with_new_children should preserve the output schema.
-        let edited = outer_take.with_new_children(vec![input])?;
+        // replace_children should preserve the output schema.
+        let edited = outer_take.replace_children(
+            vec![input],
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )?;
         assert_eq!(edited.schema().field_names(), vec!["i", ROW_ID, "f", "s"],);
         Ok(())
     }

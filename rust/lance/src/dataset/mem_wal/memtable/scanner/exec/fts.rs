@@ -32,6 +32,9 @@ use crate::dataset::mem_wal::index::{SearchOptions, search_cross_column};
 use crate::dataset::mem_wal::memtable::scanner::exec::take_projected_columns;
 use crate::dataset::mem_wal::scanner::exec::resolve_pk_indices;
 use crate::dataset::mem_wal::write::{BatchStore, IndexStore};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::physical_plan::execution_plan::apply_expression_roots;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Score column name in output.
 pub const SCORE_COLUMN: &str = "_score";
@@ -666,6 +669,13 @@ impl DisplayAs for FtsIndexExec {
 }
 
 impl ExecutionPlan for FtsIndexExec {
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        apply_expression_roots(self.filter.iter(), f)
+    }
+
     fn name(&self) -> &str {
         "FtsIndexExec"
     }

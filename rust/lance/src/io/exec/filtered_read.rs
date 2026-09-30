@@ -70,6 +70,8 @@ use crate::dataset::scanner::{
 use crate::dataset::versions;
 
 use super::utils::IoMetrics;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use lance_datafusion::utils::plan_statistics;
 
 type MaterializedReadBatchFut = futures::future::BoxFuture<'static, Result<MaterializedBlobBatch>>;
 type MaterializedReadBatchesFut =
@@ -3304,6 +3306,13 @@ impl DisplayAs for FilteredReadExec {
 }
 
 impl ExecutionPlan for FilteredReadExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FilteredReadExec"
     }
@@ -3343,7 +3352,7 @@ impl ExecutionPlan for FilteredReadExec {
         if let RowSelector::RowStream(source) = &self.input {
             // At most one output row per input row
             return Ok(Arc::new(Statistics {
-                num_rows: source.plan.partition_statistics(partition)?.num_rows,
+                num_rows: plan_statistics(source.plan.as_ref(), partition)?.num_rows,
                 ..Statistics::new_unknown(self.schema().as_ref())
             }));
         }
@@ -3427,7 +3436,7 @@ impl ExecutionPlan for FilteredReadExec {
             None,
         )?);
         let df_filter_exec = FilterExec::try_new(physical_filter, mock_input)?;
-        let mut df_stats = Arc::unwrap_or_clone(df_filter_exec.partition_statistics(partition)?);
+        let mut df_stats = Arc::unwrap_or_clone(plan_statistics(&df_filter_exec, partition)?);
 
         // If we have an after-filter range, we should apply it to the stats (the before-filter range
         // is applied in the mock input)
@@ -3598,6 +3607,9 @@ impl ExecutionPlan for FilteredReadExec {
 
 #[cfg(test)]
 mod tests {
+    use datafusion::physical_plan::execution_plan::{
+        ChildrenPropertiesMode, ReplaceChildrenOptions,
+    };
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -4429,7 +4441,7 @@ mod tests {
 
         let plan = fixture.make_plan(options).await;
 
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Exact(expected_rows));
 
         // The estimate is only worth anything if it matches what the scan emits.
@@ -4775,7 +4787,7 @@ mod tests {
 
         let plan = fixture.make_plan(base_options.clone()).await;
 
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         // With no filter and no range we have an exact count
         assert_eq!(stats.num_rows, Precision::Exact(250));
 
@@ -4785,7 +4797,7 @@ mod tests {
             .with_scan_range_before_filter(25..125)
             .unwrap();
         let plan = fixture.make_plan(options).await;
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Exact(100));
 
         // With a filter, we don't know the exact count but DF can make some guesses
@@ -4796,7 +4808,7 @@ mod tests {
             .clone()
             .with_filter_plan(fixture.filter_plan("not_indexed >= 200", false).await);
         let plan = fixture.make_plan(options).await;
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Inexact(250));
 
         // In this case DF doesn't recognize the expression as simple and so it assumes a default
@@ -4805,7 +4817,7 @@ mod tests {
             .clone()
             .with_filter_plan(fixture.filter_plan("random() < 0.5", false).await);
         let plan = fixture.make_plan(options).await;
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Inexact(50));
 
         // Filter columns not part of projection, make sure statistics using correct input schema
@@ -4822,7 +4834,7 @@ mod tests {
                     .unwrap(),
             );
         let plan = fixture.make_plan(options).await;
-        let stats = plan.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&plan, None).unwrap();
         assert_eq!(stats.num_rows, Precision::Inexact(250));
         assert_eq!(stats.column_statistics.len(), 1);
     }
@@ -6095,7 +6107,12 @@ mod tests {
             assert_eq!(plan.properties().output_ordering(), expected.as_ref());
 
             // Replacing the input must not leave stale ordering properties.
-            let rebuilt = plan.with_new_children(vec![input]).unwrap();
+            let rebuilt = plan
+                .replace_children(
+                    vec![input],
+                    ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+                )
+                .unwrap();
             assert!(rebuilt.output_ordering().is_none());
             assert_eq!(rebuilt.maintains_input_order(), vec![true]);
 
@@ -7012,7 +7029,13 @@ mod tests {
             let input = rows_input(vec![batch]);
             let plan: Arc<dyn ExecutionPlan> =
                 Arc::new(take_plan(&fixture.dataset, input.clone(), &["s"]).unwrap());
-            let rebuilt = plan.clone().with_new_children(vec![input]).unwrap();
+            let rebuilt = plan
+                .clone()
+                .replace_children(
+                    vec![input],
+                    ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+                )
+                .unwrap();
             assert_eq!(plan.schema(), rebuilt.schema());
             assert!(
                 rebuilt

@@ -44,6 +44,8 @@ use tracing::Instrument;
 use super::row_addr_mask::MaskAndLoader;
 use crate::Dataset;
 use crate::index::prefilter::DatasetPreFilter;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Open fragments on cancellation-safe tasks while preserving the stream's
 /// ordering and readahead bound.
@@ -155,6 +157,13 @@ impl DisplayAs for SharedPreFilterExec {
 }
 
 impl ExecutionPlan for SharedPreFilterExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "SharedPreFilterExec"
     }
@@ -907,6 +916,13 @@ where
 }
 
 impl ExecutionPlan for ReplayExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "ReplayExec"
     }

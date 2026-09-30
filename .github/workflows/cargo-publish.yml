@@ -86,7 +86,7 @@ jobs:
       # - uses: rust-lang/crates-io-auth-action@v1
       #   id: auth
       # lance-arrow-stats and lance-arrow-scalar are versioned with Arrow
-      # (currently 58.0.0) and released on Arrow's cadence, not Lance's, so
+      # (currently 59.0.0) and released on Arrow's cadence, not Lance's, so
       # they are excluded from the per-release publish. Bump and publish them
       # explicitly when their source changes.
       - name: Publish crates

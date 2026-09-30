@@ -3,13 +3,17 @@
 
 use std::sync::Arc;
 
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::physical_plan::execution_plan::{ChildrenPropertiesMode, ReplaceChildrenOptions};
 use datafusion::{catalog::Session, execution::TaskContext, logical_expr::Expr};
+use datafusion_physical_expr::PhysicalExpr;
 use datafusion_physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
     Statistics, filter::FilterExec, metrics::MetricsSet,
 };
 use lance_core::{Result, error::DataFusionResult};
 use lance_datafusion::planner::Planner;
+use lance_datafusion::utils::plan_statistics;
 
 #[derive(Debug)]
 // LanceFilterExec is a wrapper around FilterExec that includes the original
@@ -62,6 +66,13 @@ impl LanceFilterExec {
 }
 
 impl ExecutionPlan for LanceFilterExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "LanceFilterExec"
     }
@@ -83,7 +94,10 @@ impl ExecutionPlan for LanceFilterExec {
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         // Rewrap the result in a LanceFilterExec to preserve the logical expression
-        let new_filter_plan = self.filter.clone().with_new_children(children)?;
+        let new_filter_plan = self.filter.clone().replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )?;
         let new_filter = new_filter_plan
             .downcast_ref::<FilterExec>()
             .expect("FilterExec::with_new_children should return FilterExec")
@@ -107,7 +121,7 @@ impl ExecutionPlan for LanceFilterExec {
     }
 
     fn partition_statistics(&self, partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
-        self.filter.partition_statistics(partition)
+        plan_statistics(self.filter.as_ref(), partition)
     }
 
     fn cardinality_effect(&self) -> datafusion_physical_plan::execution_plan::CardinalityEffect {

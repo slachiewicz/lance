@@ -49,6 +49,8 @@ use tracing::warn;
 
 use super::super::block_list::{GenMembership, on_disk_pk_key};
 use super::pk::resolve_pk_indices;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 /// Filters out rows whose PK is contained in any newer generation's membership.
 #[derive(Debug)]
@@ -104,6 +106,13 @@ impl DisplayAs for PkBlockFilterExec {
 }
 
 impl ExecutionPlan for PkBlockFilterExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "PkBlockFilterExec"
     }

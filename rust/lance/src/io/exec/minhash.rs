@@ -42,6 +42,8 @@ use super::knn::KNN_INDEX_SCHEMA;
 use super::utils::{IndexMetrics, PreFilterMasks, build_prefilter};
 use crate::Dataset;
 use crate::index::{DatasetIndexInternalExt, validate_segment_params_compatible};
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
 
 async fn open_minhash_segment(
     dataset: &Dataset,
@@ -143,6 +145,13 @@ impl DisplayAs for MinHashSearchExec {
 }
 
 impl ExecutionPlan for MinHashSearchExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "MinHashSearchExec"
     }
@@ -412,6 +421,13 @@ impl DisplayAs for FlatMinHashExec {
 }
 
 impl ExecutionPlan for FlatMinHashExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "FlatMinHashExec"
     }

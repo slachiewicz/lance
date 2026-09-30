@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use arrow_array::RecordBatch;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::{
     execution::context::TaskContext,
@@ -15,6 +16,7 @@ use datafusion::{
         execution_plan::{Boundedness, EmissionType},
     },
 };
+use datafusion_physical_expr::PhysicalExpr;
 use datafusion_physical_expr::{EquivalenceProperties, Partitioning};
 use futures::StreamExt;
 
@@ -46,6 +48,13 @@ impl DisplayAs for TestingExec {
 }
 
 impl ExecutionPlan for TestingExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "TestingExec"
     }

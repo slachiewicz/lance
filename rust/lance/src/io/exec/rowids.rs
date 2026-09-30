@@ -28,6 +28,9 @@ use lance_table::rowids::RowIdIndex;
 use crate::Dataset;
 use crate::dataset::rowids::get_row_id_index;
 use crate::utils::future::SharedPrerequisite;
+use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion_physical_expr::PhysicalExpr;
+use lance_datafusion::utils::plan_statistics;
 
 /// Add a `_rowaddr` column to a stream of record batches that have a `_rowid`.
 ///
@@ -242,6 +245,13 @@ impl DisplayAs for AddRowAddrExec {
 }
 
 impl ExecutionPlan for AddRowAddrExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "AddRowAddrExec"
     }
@@ -292,7 +302,7 @@ impl ExecutionPlan for AddRowAddrExec {
         &self,
         partition: Option<usize>,
     ) -> Result<Arc<datafusion::physical_plan::Statistics>> {
-        let mut stats = Arc::unwrap_or_clone(self.input.partition_statistics(partition)?);
+        let mut stats = Arc::unwrap_or_clone(plan_statistics(self.input.as_ref(), partition)?);
 
         let row_id_col_stats = stats.column_statistics.get(self.rowid_pos).ok_or_else(|| {
             DataFusionError::Internal("RowAddrExec: rowid column stats not found".into())
@@ -506,6 +516,13 @@ impl DisplayAs for AddRowOffsetExec {
 }
 
 impl ExecutionPlan for AddRowOffsetExec {
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> datafusion::error::Result<TreeNodeRecursion>,
+    ) -> datafusion::error::Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
     fn name(&self) -> &str {
         "AddRowOffsetExec"
     }
@@ -527,7 +544,7 @@ impl ExecutionPlan for AddRowOffsetExec {
     }
 
     fn partition_statistics(&self, partition: Option<usize>) -> Result<Arc<Statistics>> {
-        self.input.partition_statistics(partition)
+        plan_statistics(self.input.as_ref(), partition)
     }
 
     fn supports_limit_pushdown(&self) -> bool {
@@ -721,7 +738,7 @@ mod test {
         let memory_exec =
             MemorySourceConfig::try_new_exec(&[vec![batch.clone()]], schema, None).unwrap();
         let exec = AddRowAddrExec::try_new(memory_exec, dataset.clone(), 0).unwrap();
-        let stats = exec.partition_statistics(None).unwrap();
+        let stats = plan_statistics(&exec, None).unwrap();
         let result = apply_to_batch(batch, dataset).await.unwrap();
 
         assert_eq!(stats.num_rows, Precision::Exact(3));
