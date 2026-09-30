@@ -107,3 +107,8 @@ incremental = false
 
 [lints.clippy]
 disallowed_macros = "deny"
+
+# DO NOT MERGE: geodatafusion's DataFusion 55 upgrade is unreleased
+# (datafusion-contrib/geodatafusion#105).
+[patch.crates-io]
+geodatafusion = { git = "https://github.com/ianthetechie/geodatafusion", branch = "geoarrow-0-9-and-datafusion-55-upgrade" }

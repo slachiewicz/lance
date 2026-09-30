@@ -283,3 +283,8 @@ multiple-crate-versions = "allow"
 single_range_in_vec_init = "allow"
 large_futures = "deny"
 disallowed_macros = "deny"
+
+# LOCAL ONLY - not for commit: geodatafusion's DataFusion 55 upgrade is unreleased
+# (datafusion-contrib/geodatafusion#105).
+[patch.crates-io]
+geodatafusion = { git = "https://github.com/ianthetechie/geodatafusion", branch = "geoarrow-0-9-and-datafusion-55-upgrade" }
