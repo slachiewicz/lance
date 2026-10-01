@@ -26,7 +26,8 @@ use datafusion::physical_plan::metrics::{
     BaselineMetrics, Count, ExecutionPlanMetricsSet, Gauge, MetricBuilder, MetricValue, Time,
 };
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, RecordBatchStream,
+    ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    InputDistributionRequirements, PlanProperties, RecordBatchStream, ReplaceChildrenOptions,
     SendableRecordBatchStream,
 };
 use datafusion_physical_expr::{Distribution, EquivalenceProperties, Partitioning};
@@ -172,16 +173,19 @@ impl ExecutionPlan for SharedPreFilterExec {
         vec![&self.source]
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let source = match children.len() {
             1 => children.pop().ok_or_else(|| {
@@ -196,6 +200,16 @@ impl ExecutionPlan for SharedPreFilterExec {
             }
         };
         Ok(Arc::new(Self::new(source, self.materialization.clone())))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -935,11 +949,22 @@ impl ExecutionPlan for ReplayExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         _: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
         unimplemented!()
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn benefits_from_input_partitioning(&self) -> Vec<bool> {

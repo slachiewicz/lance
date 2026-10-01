@@ -26,8 +26,9 @@ use datafusion::{
         runtime_env::RuntimeEnvBuilder,
     },
     physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
-        SendableRecordBatchStream,
+        ChildStats, ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+        ExecutionPlanProperties, PlanProperties, ReplaceChildrenOptions, SendableRecordBatchStream,
+        StatisticsArgs,
         analyze::AnalyzeExecBuilder,
         coalesce_partitions::CoalescePartitionsExec,
         display::DisplayableExecutionPlan,
@@ -58,7 +59,6 @@ use log::{debug, info, warn};
 use tracing::Span;
 
 use crate::udf::register_functions;
-use crate::utils::plan_statistics;
 use crate::{
     chunker::StrictBatchSizeStream,
     utils::{
@@ -175,9 +175,10 @@ impl ExecutionPlan for OneShotExec {
         vec![]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
         // OneShotExec has no children, so this should only be called with an empty vector
         if !children.is_empty() {
@@ -186,6 +187,16 @@ impl ExecutionPlan for OneShotExec {
             ));
         }
         Ok(self)
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -269,15 +280,26 @@ impl ExecutionPlan for TracedExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(Self {
             input: children[0].clone(),
             properties: self.properties.clone(),
             span: self.span.clone(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -1126,14 +1148,25 @@ impl ExecutionPlan for StrictBatchSizeExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(Self {
             input: children[0].clone(),
             batch_size: self.batch_size,
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -1155,11 +1188,16 @@ impl ExecutionPlan for StrictBatchSizeExec {
         vec![false]
     }
 
-    fn partition_statistics(
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
         &self,
-        partition: Option<usize>,
+        input_stats: &[std::sync::Arc<Statistics>],
+        _args: &StatisticsArgs,
     ) -> datafusion_common::Result<std::sync::Arc<Statistics>> {
-        plan_statistics(self.input.as_ref(), partition)
+        Ok(std::sync::Arc::clone(&input_stats[0]))
     }
 
     fn cardinality_effect(&self) -> CardinalityEffect {
@@ -1237,14 +1275,25 @@ impl ExecutionPlan for HardCapBatchSizeExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(Self {
             input: children[0].clone(),
             max_bytes: self.max_bytes,
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -1287,11 +1336,16 @@ impl ExecutionPlan for HardCapBatchSizeExec {
         vec![false]
     }
 
-    fn partition_statistics(
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
         &self,
-        partition: Option<usize>,
+        input_stats: &[std::sync::Arc<Statistics>],
+        _args: &StatisticsArgs,
     ) -> datafusion_common::Result<std::sync::Arc<Statistics>> {
-        plan_statistics(self.input.as_ref(), partition)
+        Ok(std::sync::Arc::clone(&input_stats[0]))
     }
 
     fn cardinality_effect(&self) -> CardinalityEffect {
@@ -1651,11 +1705,22 @@ mod tests {
         fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
             vec![]
         }
-        fn with_new_children(
+        fn replace_children(
             self: Arc<Self>,
             _children: Vec<Arc<dyn ExecutionPlan>>,
+            _options: ReplaceChildrenOptions,
         ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
             Ok(self)
+        }
+
+        fn with_new_children(
+            self: Arc<Self>,
+            children: Vec<Arc<dyn ExecutionPlan>>,
+        ) -> datafusion_common::Result<Arc<dyn ExecutionPlan>> {
+            self.replace_children(
+                children,
+                ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+            )
         }
         fn execute(
             &self,

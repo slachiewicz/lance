@@ -14,8 +14,8 @@ use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::TaskContext;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, RecordBatchStream,
-    SendableRecordBatchStream,
+    ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
+    RecordBatchStream, ReplaceChildrenOptions, SendableRecordBatchStream,
 };
 use futures::{Stream, StreamExt};
 
@@ -85,9 +85,10 @@ impl ExecutionPlan for ReconcileExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(Self::new(
             children
@@ -96,6 +97,16 @@ impl ExecutionPlan for ReconcileExec {
                 .ok_or_else(|| DataFusionError::Internal("ReconcileExec needs one child".into()))?,
             Arc::clone(&self.plan),
         )))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DFResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(

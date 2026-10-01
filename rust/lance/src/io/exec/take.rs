@@ -19,7 +19,8 @@ use datafusion::physical_plan::metrics::{
 };
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
+    ChildStats, ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    PlanProperties, ReplaceChildrenOptions, SendableRecordBatchStream, StatisticsArgs,
 };
 use datafusion_physical_expr::EquivalenceProperties;
 use futures::FutureExt;
@@ -43,7 +44,6 @@ use crate::index::prefilter::DatasetPreFilter;
 use super::utils::IoMetrics;
 use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion_physical_expr::PhysicalExpr;
-use lance_datafusion::utils::plan_statistics;
 
 #[derive(Debug, Clone)]
 struct TakeStreamMetrics {
@@ -675,9 +675,10 @@ impl ExecutionPlan for TakeExec {
     }
 
     /// This preserves the output schema.
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(
@@ -700,6 +701,16 @@ impl ExecutionPlan for TakeExec {
             // Is this legal or do we need to insert a no-op node?
             Ok(children[0].clone())
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -745,12 +756,17 @@ impl ExecutionPlan for TakeExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn partition_statistics(
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
         &self,
-        partition: Option<usize>,
+        input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
     ) -> Result<Arc<datafusion::physical_plan::Statistics>> {
         Ok(Arc::new(Statistics {
-            num_rows: plan_statistics(self.input.as_ref(), partition)?.num_rows,
+            num_rows: input_stats[0].num_rows,
             ..Statistics::new_unknown(self.schema().as_ref())
         }))
     }

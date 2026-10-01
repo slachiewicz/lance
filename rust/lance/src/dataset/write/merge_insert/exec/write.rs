@@ -15,7 +15,8 @@ use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSe
 use datafusion::{
     execution::{SendableRecordBatchStream, TaskContext},
     physical_plan::{
-        DisplayAs, ExecutionPlan, PlanProperties,
+        ChildrenPropertiesMode, DisplayAs, ExecutionPlan, InputDistributionRequirements,
+        PlanProperties, ReplaceChildrenOptions,
         execution_plan::{Boundedness, EmissionType},
         stream::RecordBatchStreamAdapter,
     },
@@ -872,9 +873,10 @@ impl ExecutionPlan for FullSchemaMergeInsertExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(datafusion::error::DataFusionError::Internal(
@@ -897,6 +899,16 @@ impl ExecutionPlan for FullSchemaMergeInsertExec {
         }))
     }
 
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DFResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
+    }
+
     fn metrics(&self) -> Option<MetricsSet> {
         Some(self.metrics.clone_inner())
     }
@@ -909,9 +921,11 @@ impl ExecutionPlan for FullSchemaMergeInsertExec {
         false
     }
 
-    fn required_input_distribution(&self) -> Vec<datafusion_physical_expr::Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // We require a single partition for the merge operation to ensure all data is processed
-        vec![datafusion_physical_expr::Distribution::SinglePartition]
+        InputDistributionRequirements::new(vec![
+            datafusion_physical_expr::Distribution::SinglePartition,
+        ])
     }
 
     fn benefits_from_input_partitioning(&self) -> Vec<bool> {

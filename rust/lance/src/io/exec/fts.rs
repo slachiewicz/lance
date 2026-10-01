@@ -18,7 +18,10 @@ use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, Gauge, Metrics
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::union::UnionExec;
-use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
+use datafusion::physical_plan::{
+    ChildStats, ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    InputDistributionRequirements, PlanProperties, ReplaceChildrenOptions, StatisticsArgs,
+};
 use datafusion_physical_expr::expressions::Column;
 use datafusion_physical_expr::{Distribution, EquivalenceProperties, Partitioning, PhysicalExpr};
 use datafusion_physical_plan::ExecutionPlanProperties;
@@ -52,7 +55,6 @@ use crate::index::scalar::inverted::{
 };
 use crate::{Dataset, index::DatasetIndexInternalExt};
 use datafusion::common::tree_node::TreeNodeRecursion;
-use lance_datafusion::utils::plan_statistics;
 use lance_index::metrics::MetricsCollector;
 use lance_index::scalar::inverted::builder::ScoredDoc;
 use lance_index::scalar::inverted::builder::document_input;
@@ -239,9 +241,10 @@ impl ExecutionPlan for FtsDocumentExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(
@@ -252,6 +255,16 @@ impl ExecutionPlan for FtsDocumentExec {
             children.pop().unwrap(),
             self.resolved.clone(),
         )))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -1112,13 +1125,14 @@ impl ExecutionPlan for HybridCompoundQueryExec {
         vec![&self.residual_input]
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        vec![Distribution::SinglePartition]
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(vec![Distribution::SinglePartition])
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(format!(
@@ -1137,6 +1151,16 @@ impl ExecutionPlan for HybridCompoundQueryExec {
             self.segments.to_vec(),
             residual_input,
         )))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "hybrid_compound_fts_exec", level = "debug", skip_all)]
@@ -1397,16 +1421,19 @@ impl ExecutionPlan for CompoundQueryExec {
         self.prefilter_source.execution_plan().into_iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let prefilter_source = match children.len() {
             0 if matches!(self.prefilter_source, PreFilterSource::None) => PreFilterSource::None,
@@ -1437,6 +1464,16 @@ impl ExecutionPlan for CompoundQueryExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "compound_fts_scorer_exec", level = "debug", skip_all)]
@@ -1957,16 +1994,19 @@ impl ExecutionPlan for CrossColumnCompoundQueryExec {
         self.prefilter_source.execution_plan().into_iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let prefilter_source = match children.len() {
             0 if matches!(self.prefilter_source, PreFilterSource::None) => PreFilterSource::None,
@@ -1996,6 +2036,16 @@ impl ExecutionPlan for CrossColumnCompoundQueryExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(
@@ -2944,17 +2994,20 @@ impl ExecutionPlan for MatchQueryExec {
         self.prefilter_source.execution_plan().into_iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // Prefilter inputs must be a single partition
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let plan = match children.len() {
             0 => {
@@ -3011,6 +3064,16 @@ impl ExecutionPlan for MatchQueryExec {
             }
         };
         Ok(Arc::new(plan))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "match_query_exec", level = "debug", skip_all)]
@@ -3492,16 +3555,19 @@ impl ExecutionPlan for CombinedFieldsQueryExec {
         self.prefilter_source.execution_plan().into_iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let expected = self.children().len();
         if children.len() != expected {
@@ -3515,6 +3581,16 @@ impl ExecutionPlan for CombinedFieldsQueryExec {
             None => PreFilterSource::None,
         };
         Ok(Arc::new(self.clone_with_prefilter_source(prefilter_source)))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "combined_fields_query_exec", level = "debug", skip_all)]
@@ -4040,9 +4116,10 @@ impl ExecutionPlan for FlatMatchFilterExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(
@@ -4064,6 +4141,16 @@ impl ExecutionPlan for FlatMatchFilterExec {
             resolved_field: self.resolved_field.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "flat_match_filter_exec", level = "debug", skip_all)]
@@ -4095,8 +4182,16 @@ impl ExecutionPlan for FlatMatchFilterExec {
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 
-    fn partition_statistics(&self, partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
-        plan_statistics(self.input.as_ref(), partition)
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
+        &self,
+        input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
+    ) -> DataFusionResult<Arc<Statistics>> {
+        Ok(Arc::clone(&input_stats[0]))
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
@@ -4318,17 +4413,18 @@ impl ExecutionPlan for FlatMatchQueryExec {
         vec![&self.unindexed_input]
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // `execute()` only reads `unindexed_input.execute(partition)` for the single
         // output partition, so the input must be coalesced to one partition. Without
         // this, EnforceDistribution may round-robin the scan across `target_partitions`
         // and only partition 0 is consumed, silently dropping the other fragments.
-        vec![Distribution::SinglePartition]
+        InputDistributionRequirements::new(vec![Distribution::SinglePartition])
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(
@@ -4351,6 +4447,16 @@ impl ExecutionPlan for FlatMatchQueryExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "flat_match_query_exec", level = "debug", skip_all)]
@@ -4655,20 +4761,23 @@ impl ExecutionPlan for FlatCombinedFieldsExec {
         children
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // `execute()` reads only `unindexed_input.execute(partition)` for the
         // single output partition, so the input must be coalesced to one
         // partition or fragments would be silently dropped. Same reasoning as
         // `FlatMatchQueryExec`.
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != self.children().len() {
             return Err(DataFusionError::Internal(
@@ -4702,6 +4811,16 @@ impl ExecutionPlan for FlatCombinedFieldsExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "flat_combined_fields_exec", level = "debug", skip_all)]
@@ -5159,17 +5278,20 @@ impl ExecutionPlan for PhraseQueryExec {
         self.prefilter_source.execution_plan().into_iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // Prefilter inputs must be a single partition
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let plan = match children.len() {
             0 => {
@@ -5222,6 +5344,16 @@ impl ExecutionPlan for PhraseQueryExec {
             }
         };
         Ok(Arc::new(plan))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "phrase_query_exec", level = "debug", skip_all)]
@@ -5443,18 +5575,21 @@ impl ExecutionPlan for BoostQueryExec {
         vec![&self.positive, &self.negative]
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // This node fully consumes and re-orders the input rows.
         // It must be run on a single partition.
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 2 {
             return Err(DataFusionError::Internal(
@@ -5473,6 +5608,16 @@ impl ExecutionPlan for BoostQueryExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "boost_query_exec", level = "debug", skip_all)]
@@ -5725,18 +5870,21 @@ impl ExecutionPlan for BooleanQueryExec {
         }
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // This node fully consumes and re-orders the input rows.
         // It must be run on a single partition.
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         match children.len() {
             1 => {
@@ -5785,6 +5933,16 @@ impl ExecutionPlan for BooleanQueryExec {
                 "Unexpected number of children".to_string(),
             )),
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "bool_query_exec", level = "debug", skip_all)]

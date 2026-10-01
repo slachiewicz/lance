@@ -11,7 +11,10 @@ use datafusion::common::stats::Precision;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::SendableRecordBatchStream;
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
-use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
+use datafusion::physical_plan::{
+    ChildStats, ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    PlanProperties, ReplaceChildrenOptions, StatisticsArgs,
+};
 use datafusion_physical_expr::EquivalenceProperties;
 use datafusion_physical_plan::Statistics;
 use datafusion_physical_plan::execution_plan::CardinalityEffect;
@@ -30,7 +33,6 @@ use crate::dataset::rowids::get_row_id_index;
 use crate::utils::future::SharedPrerequisite;
 use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion_physical_expr::PhysicalExpr;
-use lance_datafusion::utils::plan_statistics;
 
 /// Add a `_rowaddr` column to a stream of record batches that have a `_rowid`.
 ///
@@ -269,9 +271,10 @@ impl ExecutionPlan for AddRowAddrExec {
         vec![false]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             Err(DataFusionError::Internal(
@@ -286,6 +289,16 @@ impl ExecutionPlan for AddRowAddrExec {
         }
     }
 
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
+    }
+
     fn execute(
         &self,
         partition: usize,
@@ -298,11 +311,16 @@ impl ExecutionPlan for AddRowAddrExec {
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 
-    fn partition_statistics(
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
         &self,
-        partition: Option<usize>,
+        input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
     ) -> Result<Arc<datafusion::physical_plan::Statistics>> {
-        let mut stats = Arc::unwrap_or_clone(plan_statistics(self.input.as_ref(), partition)?);
+        let mut stats = Statistics::clone(&input_stats[0]);
 
         let row_id_col_stats = stats.column_statistics.get(self.rowid_pos).ok_or_else(|| {
             DataFusionError::Internal("RowAddrExec: rowid column stats not found".into())
@@ -543,8 +561,16 @@ impl ExecutionPlan for AddRowOffsetExec {
         vec![false]
     }
 
-    fn partition_statistics(&self, partition: Option<usize>) -> Result<Arc<Statistics>> {
-        plan_statistics(self.input.as_ref(), partition)
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
+        &self,
+        input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
+    ) -> Result<Arc<Statistics>> {
+        Ok(Arc::clone(&input_stats[0]))
     }
 
     fn supports_limit_pushdown(&self) -> bool {
@@ -555,9 +581,10 @@ impl ExecutionPlan for AddRowOffsetExec {
         CardinalityEffect::Equal
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             Err(DataFusionError::Internal(
@@ -569,6 +596,16 @@ impl ExecutionPlan for AddRowOffsetExec {
                 self.frag_id_to_offset.clone(),
             )?))
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -608,6 +645,7 @@ mod test {
     use futures::TryStreamExt;
     use lance_core::{ROW_ADDR, ROW_ID_FIELD};
     use lance_datafusion::exec::OneShotExec;
+    use lance_datafusion::utils::plan_statistics;
 
     use crate::dataset::WriteParams;
 

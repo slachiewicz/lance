@@ -18,7 +18,10 @@ use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
+use datafusion::physical_plan::{
+    ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    InputDistributionRequirements, PlanProperties, ReplaceChildrenOptions,
+};
 use datafusion_physical_expr::{Distribution, EquivalenceProperties, Partitioning};
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt, future::try_join_all, stream};
@@ -160,16 +163,19 @@ impl ExecutionPlan for MinHashSearchExec {
         self.prefilter_source.execution_plan().into_iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let prefilter_source = match children.len() {
             0 => {
@@ -203,6 +209,16 @@ impl ExecutionPlan for MinHashSearchExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "minhash_search_exec", level = "debug", skip_all)]
@@ -436,15 +452,16 @@ impl ExecutionPlan for FlatMinHashExec {
         vec![&self.input]
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // `execute` reads a single input partition; without this the input
         // could be split across partitions of which only one is consumed.
-        vec![Distribution::SinglePartition]
+        InputDistributionRequirements::new(vec![Distribution::SinglePartition])
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(format!(
@@ -463,6 +480,16 @@ impl ExecutionPlan for FlatMinHashExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     #[instrument(name = "flat_minhash_exec", level = "debug", skip_all)]

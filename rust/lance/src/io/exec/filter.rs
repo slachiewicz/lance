@@ -9,7 +9,7 @@ use datafusion::{catalog::Session, execution::TaskContext, logical_expr::Expr};
 use datafusion_physical_expr::PhysicalExpr;
 use datafusion_physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
-    Statistics, filter::FilterExec, metrics::MetricsSet,
+    Statistics, StatisticsArgs, filter::FilterExec, metrics::MetricsSet,
 };
 use lance_core::{Result, error::DataFusionResult};
 use lance_datafusion::planner::Planner;
@@ -89,9 +89,10 @@ impl ExecutionPlan for LanceFilterExec {
         self.filter.maintains_input_order()
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         // Rewrap the result in a LanceFilterExec to preserve the logical expression
         let new_filter_plan = self.filter.clone().replace_children(
@@ -108,6 +109,16 @@ impl ExecutionPlan for LanceFilterExec {
         }))
     }
 
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
+    }
+
     fn execute(
         &self,
         partition: usize,
@@ -120,8 +131,12 @@ impl ExecutionPlan for LanceFilterExec {
         self.filter.metrics()
     }
 
-    fn partition_statistics(&self, partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
-        plan_statistics(self.filter.as_ref(), partition)
+    fn statistics_from_inputs(
+        &self,
+        _input_stats: &[Arc<Statistics>],
+        args: &StatisticsArgs,
+    ) -> DataFusionResult<Arc<Statistics>> {
+        plan_statistics(self.filter.as_ref(), args.partition())
     }
 
     fn cardinality_effect(&self) -> datafusion_physical_plan::execution_plan::CardinalityEffect {

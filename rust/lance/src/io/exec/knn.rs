@@ -21,8 +21,9 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use datafusion::physical_plan::PlanProperties;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream,
-    Statistics,
+    ChildStats, ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    InputDistributionRequirements, Partitioning, ReplaceChildrenOptions, SendableRecordBatchStream,
+    Statistics, StatisticsArgs,
 };
 use datafusion::{common::ColumnStatistics, physical_plan::metrics::ExecutionPlanMetricsSet};
 use datafusion::{
@@ -80,7 +81,6 @@ mod adaptive_probe;
 use adaptive_probe::AutoProbePolicy;
 use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion_physical_expr::PhysicalExpr;
-use lance_datafusion::utils::plan_statistics;
 
 pub const QUERY_INDEX_COL: &str = "query_index";
 
@@ -969,9 +969,10 @@ impl ExecutionPlan for KNNVectorDistanceExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(
@@ -993,6 +994,16 @@ impl ExecutionPlan for KNNVectorDistanceExec {
                 retain_vector: self.retain_vector,
             },
         )?))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -1075,8 +1086,16 @@ impl ExecutionPlan for KNNVectorDistanceExec {
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 
-    fn partition_statistics(&self, partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
-        let inner_stats = plan_statistics(self.input.as_ref(), partition)?;
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        vec![ChildStats::At(partition)]
+    }
+
+    fn statistics_from_inputs(
+        &self,
+        input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
+    ) -> DataFusionResult<Arc<Statistics>> {
+        let inner_stats = &input_stats[0];
         let input_schema = self.input.schema();
         let input_stats_by_name = inner_stats
             .column_statistics
@@ -1131,10 +1150,10 @@ impl ExecutionPlan for KNNVectorDistanceExec {
         false
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // Both batch and non-batch modes execute a single input partition at a time,
         // so all input must be coalesced to one partition before distance computation.
-        vec![Distribution::SinglePartition]
+        InputDistributionRequirements::new(vec![Distribution::SinglePartition])
     }
 }
 
@@ -1423,7 +1442,11 @@ impl ExecutionPlan for ANNIvfPartitionExec {
         &self.properties
     }
 
-    fn partition_statistics(&self, _partition: Option<usize>) -> DataFusionResult<Arc<Statistics>> {
+    fn statistics_from_inputs(
+        &self,
+        _input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
+    ) -> DataFusionResult<Arc<Statistics>> {
         Ok(Arc::new(Statistics {
             num_rows: Precision::Exact(self.query.minimum_nprobes),
             ..Statistics::new_unknown(self.schema().as_ref())
@@ -1438,9 +1461,10 @@ impl ExecutionPlan for ANNIvfPartitionExec {
         vec![]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if !children.is_empty() {
             Err(DataFusionError::Internal(
@@ -1449,6 +1473,16 @@ impl ExecutionPlan for ANNIvfPartitionExec {
         } else {
             Ok(self)
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -2238,17 +2272,20 @@ impl ExecutionPlan for ANNIvfSubIndexExec {
         }
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // Prefilter inputs must be a single partition
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let plan = if children.len() == 1 || children.len() == 2 {
             let prefilter_source = if children.len() == 2 {
@@ -2283,6 +2320,16 @@ impl ExecutionPlan for ANNIvfSubIndexExec {
             ));
         };
         Ok(Arc::new(plan))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -2477,18 +2524,23 @@ impl ExecutionPlan for ANNIvfSubIndexExec {
         )))
     }
 
-    fn partition_statistics(
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        // Only `input` (always the first child) feeds the estimate
+        let mut requests = vec![ChildStats::Skip; self.children().len()];
+        requests[0] = ChildStats::At(partition);
+        requests
+    }
+
+    fn statistics_from_inputs(
         &self,
-        partition: Option<usize>,
+        input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
     ) -> DataFusionResult<Arc<datafusion::physical_plan::Statistics>> {
         Ok(Arc::new(Statistics {
             num_rows: Precision::Exact(
                 self.query.k
                     * self.query.refine_factor.unwrap_or(1) as usize
-                    * plan_statistics(self.input.as_ref(), partition)?
-                        .num_rows
-                        .get_value()
-                        .unwrap_or(&1),
+                    * input_stats[0].num_rows.get_value().unwrap_or(&1),
             ),
             ..Statistics::new_unknown(self.schema().as_ref())
         }))
@@ -2680,16 +2732,19 @@ impl ExecutionPlan for ANNIvfBatchExec {
         }
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         let prefilter_source = match (&self.prefilter_source, children.len()) {
             (PreFilterSource::None, 0) => PreFilterSource::None,
@@ -2714,6 +2769,16 @@ impl ExecutionPlan for ANNIvfBatchExec {
             properties: self.properties.clone(),
             metrics: ExecutionPlanMetricsSet::new(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -2962,21 +3027,34 @@ impl ExecutionPlan for MultivectorScoringExec {
         self.inputs.iter().collect()
     }
 
-    fn required_input_distribution(&self) -> Vec<Distribution> {
+    fn input_distribution_requirements(&self) -> InputDistributionRequirements {
         // This node fully consumes and re-orders the input rows.  It must be
         // run on a single partition.
-        self.children()
-            .iter()
-            .map(|_| Distribution::SinglePartition)
-            .collect()
+        InputDistributionRequirements::new(
+            self.children()
+                .iter()
+                .map(|_| Distribution::SinglePartition)
+                .collect(),
+        )
+    }
+
+    fn replace_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        let plan = Self::try_new(children, self.query.clone())?;
+        Ok(Arc::new(plan))
     }
 
     fn with_new_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
-        let plan = Self::try_new(children, self.query.clone())?;
-        Ok(Arc::new(plan))
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -3118,7 +3196,7 @@ mod tests {
     use lance_core::deepsize::DeepSizeOf;
     use lance_core::utils::tempfile::TempStrDir;
     use lance_datafusion::exec::{ExecutionStatsCallback, ExecutionSummaryCounts};
-    use lance_datafusion::utils::FIND_PARTITIONS_ELAPSED_METRIC;
+    use lance_datafusion::utils::{FIND_PARTITIONS_ELAPSED_METRIC, plan_statistics};
     use lance_datagen::{BatchCount, RowCount, array};
     use lance_index::optimize::OptimizeOptions;
     use lance_index::vector::ivf::IvfBuildParams;

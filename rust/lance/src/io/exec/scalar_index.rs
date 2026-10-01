@@ -23,7 +23,8 @@ use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::{
     execution::memory_pool::{MemoryConsumer, MemoryReservation},
     physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+        ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning,
+        PlanProperties, ReplaceChildrenOptions, StatisticsArgs,
         execution_plan::{Boundedness, EmissionType},
         metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet},
         stream::RecordBatchStreamAdapter,
@@ -309,9 +310,10 @@ impl ExecutionPlan for ScalarIndexExec {
         vec![]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
         if !children.is_empty() {
             Err(datafusion::error::DataFusionError::Internal(
@@ -320,6 +322,16 @@ impl ExecutionPlan for ScalarIndexExec {
         } else {
             Ok(self)
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -346,9 +358,10 @@ impl ExecutionPlan for ScalarIndexExec {
         )))
     }
 
-    fn partition_statistics(
+    fn statistics_from_inputs(
         &self,
-        _partition: Option<usize>,
+        _input_stats: &[Arc<datafusion::physical_plan::Statistics>],
+        _args: &StatisticsArgs,
     ) -> datafusion::error::Result<Arc<datafusion::physical_plan::Statistics>> {
         Ok(Arc::new(datafusion::physical_plan::Statistics {
             num_rows: datafusion::common::stats::Precision::Exact(2),
@@ -811,9 +824,10 @@ impl ExecutionPlan for MapIndexExec {
         vec![&self.input]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             Err(datafusion::error::DataFusionError::Internal(
@@ -826,6 +840,16 @@ impl ExecutionPlan for MapIndexExec {
                 children.into_iter().next().unwrap(),
             )))
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -1121,9 +1145,10 @@ impl ExecutionPlan for MaterializeIndexExec {
         vec![]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
         if !children.is_empty() {
             Err(datafusion::error::DataFusionError::Internal(
@@ -1132,6 +1157,16 @@ impl ExecutionPlan for MaterializeIndexExec {
         } else {
             Ok(self)
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(

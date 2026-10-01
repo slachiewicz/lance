@@ -15,7 +15,9 @@ use datafusion::logical_expr::interval_arithmetic::{Interval, NullableInterval};
 use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyContext};
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
-use datafusion::physical_plan::{ColumnarValue, PlanProperties};
+use datafusion::physical_plan::{
+    ChildrenPropertiesMode, ColumnarValue, PlanProperties, ReplaceChildrenOptions,
+};
 use datafusion::scalar::ScalarValue;
 use datafusion::{
     physical_plan::{
@@ -177,9 +179,10 @@ impl ExecutionPlan for LancePushdownScanExec {
         vec![]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
         if !children.is_empty() {
             Err(DataFusionError::Internal(
@@ -188,6 +191,16 @@ impl ExecutionPlan for LancePushdownScanExec {
         } else {
             Ok(self)
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn metrics(&self) -> Option<MetricsSet> {

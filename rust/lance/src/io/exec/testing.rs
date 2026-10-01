@@ -12,7 +12,8 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::{
     execution::context::TaskContext,
     physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
+        ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
+        ReplaceChildrenOptions, SendableRecordBatchStream,
         execution_plan::{Boundedness, EmissionType},
     },
 };
@@ -67,11 +68,22 @@ impl ExecutionPlan for TestingExec {
         vec![]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         _children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<std::sync::Arc<dyn ExecutionPlan>> {
         todo!()
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<std::sync::Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(

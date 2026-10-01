@@ -25,7 +25,8 @@ use std::sync::Arc;
 use arrow_array::{Array, BinaryArray, Int64Array, RecordBatch};
 use arrow_schema::{Schema, SchemaRef};
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+    ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning,
+    PlanProperties, ReplaceChildrenOptions, StatisticsArgs,
     execution_plan::{Boundedness, EmissionType},
     metrics::{ExecutionPlanMetricsSet, MetricsSet},
 };
@@ -425,9 +426,10 @@ impl ExecutionPlan for CountFromMaskExec {
         }
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
         let prefilter_input = match children.len() {
             0 => None,
@@ -448,6 +450,16 @@ impl ExecutionPlan for CountFromMaskExec {
             properties: self.properties.clone(),
             metrics: self.metrics.clone(),
         }))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
@@ -475,9 +487,10 @@ impl ExecutionPlan for CountFromMaskExec {
         )))
     }
 
-    fn partition_statistics(
+    fn statistics_from_inputs(
         &self,
-        _partition: Option<usize>,
+        _input_stats: &[Arc<datafusion::physical_plan::Statistics>],
+        _args: &StatisticsArgs,
     ) -> datafusion::error::Result<Arc<datafusion::physical_plan::Statistics>> {
         Ok(Arc::new(datafusion::physical_plan::Statistics {
             num_rows: datafusion::common::stats::Precision::Exact(1),

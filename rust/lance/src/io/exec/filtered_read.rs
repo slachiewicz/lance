@@ -21,7 +21,8 @@ use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::stream::{RecordBatchReceiverStream, RecordBatchStreamAdapter};
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
+    ChildStats, ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan,
+    ExecutionPlanProperties, PlanProperties, ReplaceChildrenOptions, StatisticsArgs,
     execution_plan::{Boundedness, EmissionType},
 };
 use datafusion_expr::Expr;
@@ -3345,14 +3346,25 @@ impl ExecutionPlan for FilteredReadExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn partition_statistics(
+    fn child_stats_requests(&self, partition: Option<usize>) -> Vec<ChildStats> {
+        match &self.input {
+            RowSelector::AllRows => vec![],
+            // The row set does not feed the estimate
+            RowSelector::RowSet(_) => vec![ChildStats::Skip],
+            RowSelector::RowStream(_) => vec![ChildStats::At(partition)],
+        }
+    }
+
+    fn statistics_from_inputs(
         &self,
-        partition: Option<usize>,
+        input_stats: &[Arc<Statistics>],
+        args: &StatisticsArgs,
     ) -> datafusion::error::Result<Arc<Statistics>> {
-        if let RowSelector::RowStream(source) = &self.input {
+        let partition = args.partition();
+        if let RowSelector::RowStream(_) = &self.input {
             // At most one output row per input row
             return Ok(Arc::new(Statistics {
-                num_rows: plan_statistics(source.plan.as_ref(), partition)?.num_rows,
+                num_rows: input_stats[0].num_rows,
                 ..Statistics::new_unknown(self.schema().as_ref())
             }));
         }
@@ -3475,9 +3487,10 @@ impl ExecutionPlan for FilteredReadExec {
         Ok(Arc::new(df_stats))
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() > 1 {
             Err(DataFusionError::External(
@@ -3491,6 +3504,16 @@ impl ExecutionPlan for FilteredReadExec {
                 .map_err(|e| DataFusionError::External(e.into()))?;
             Ok(Arc::new(rebuilt))
         }
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(

@@ -23,7 +23,8 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::TaskContext;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
+    ChildrenPropertiesMode, DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
+    ReplaceChildrenOptions, SendableRecordBatchStream,
 };
 use datafusion_physical_expr::PhysicalExpr;
 use futures::StreamExt;
@@ -115,9 +116,10 @@ impl ExecutionPlan for RowAddrMaskFilterExec {
         vec![true]
     }
 
-    fn with_new_children(
+    fn replace_children(
         self: Arc<Self>,
         mut children: Vec<Arc<dyn ExecutionPlan>>,
+        _options: ReplaceChildrenOptions,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
             return Err(DataFusionError::Internal(
@@ -128,6 +130,16 @@ impl ExecutionPlan for RowAddrMaskFilterExec {
             DataFusionError::Internal("RowAddrMaskFilterExec child unavailable".to_string())
         })?;
         Ok(Arc::new(Self::new(child, self.mask.clone())))
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        self.replace_children(
+            children,
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
     }
 
     fn execute(
