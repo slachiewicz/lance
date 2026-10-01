@@ -49,7 +49,7 @@ pub fn project(input: Arc<dyn ExecutionPlan>, projection: &ArrowSchema) -> Resul
         exprs.push((expr, name));
     }
 
-    ProjectionExec::try_new(exprs, input)
+    ProjectionExec::try_new_with_schema_metadata(exprs, input, projection)
 }
 
 fn selection_as_expr(
